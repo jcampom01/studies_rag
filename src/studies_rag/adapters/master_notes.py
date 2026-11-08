@@ -31,6 +31,7 @@ PAGE_TYPE_SIZE = 24.0  # font size of the header block naming the page type
 
 # Content pages: typography used to rebuild paragraphs
 HEADING_MIN_SIZE = 12.0   # section and subsection titles
+SECTION_HEADING_MIN_SIZE = 16.0  # section titles (bigger than subsection titles)
 CODE_SIZE = 9.0           # code listings: their line breaks are kept
 PARAGRAPH_GAP = 15.0      # vertical gap (pt) between lines that starts a new paragraph
 BULLET_MARKERS = {"▸", "•"}
@@ -76,7 +77,13 @@ class Paragraph:
     bottom: float  # y1 of its last block, to measure the gap to the next one
 
     def render(self) -> str:
-        return "\n".join(self.lines) if self.kind == "code" else " ".join(self.lines)
+        """Plain text, except headings, which get a Markdown prefix so the next steps can spot them."""
+        if self.kind == "code":
+            return "\n".join(self.lines)
+        text = " ".join(self.lines)
+        if self.kind == "heading":
+            return f"{'##' if self.size >= SECTION_HEADING_MIN_SIZE else '###'} {text}"
+        return text
 
 
 def block_kind(block: Block) -> str:
@@ -92,16 +99,26 @@ def build_paragraphs(blocks: list[Block]) -> list[str]:
 
     A block starts a new paragraph when its kind or font size changes, when it
     is a bullet marker, or when the vertical gap to the previous block is larger
-    than the normal line spacing. Consecutive code blocks are always merged.
+    than the normal line spacing. Consecutive code blocks are always merged, and
+    the block after a bullet marker always joins it.
     """
     paragraphs: list[Paragraph] = []
+    after_marker = False
     for block in blocks:
         kind, y0, y1 = block_kind(block), block.bbox[1], block.bbox[3]
         if block.text in BULLET_MARKERS:
             # The marker is its own block; the item text comes next, on the same line
             paragraphs.append(Paragraph(kind="text", size=block.size, lines=["-"], bottom=y1))
+            after_marker = True
             continue
         current = paragraphs[-1] if paragraphs else None
+        if after_marker:
+            # The item text belongs to its marker whatever its size; the next lines
+            # of the item are then compared with the text, not with the marker
+            current.lines.extend(block.lines)
+            current.kind, current.size, current.bottom = kind, block.size, y1
+            after_marker = False
+            continue
         starts_new = (
             current is None
             or kind != current.kind
@@ -113,7 +130,8 @@ def build_paragraphs(blocks: list[Block]) -> list[str]:
         else:
             current.lines.extend(block.lines)
             current.bottom = y1
-    return [p.render() for p in paragraphs]
+    # A list item whose content was an image (e.g. a formula) is left with its marker only
+    return [p.render() for p in paragraphs if p.lines != ["-"]]
 
 
 def section_at(toc: list, page_number: int) -> tuple[str | None, str | None]:
