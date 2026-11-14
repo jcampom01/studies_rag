@@ -1,0 +1,66 @@
+{
+  "ingest": {
+    "adapter": "master_notes",
+    "adapter_options": {
+      "keep_page_types": ["Ideas clave"]
+    },
+    "raw_dir": "data/raw",
+    "output": "data/processed/pages.jsonl"
+  },
+  "chunk": {
+    "chunkers": ["structured", "langchain"],
+    "input": "data/processed/pages.jsonl",
+    "output_dir": "data/processed",
+    "chunker_options": {
+      "structured": {
+        "group_by": ["section"],
+        "target_chars": 1200,
+        "max_chars": 2000,
+        "overlap_paragraphs": 1
+      },
+      "langchain": {
+        "chunk_size": 1200,
+        "chunk_overlap": 200
+      }
+    }
+  },
+  "embed": {
+    "inputs": {
+      "structured": "data/processed/chunks_structured.jsonl",
+      "langchain": "data/processed/chunks_langchain.jsonl"
+    },
+    "output_dir": "data/processed/embeddings",
+    "context_template": "{collection_name} › Tema {doc_number}: {doc_title} › {section}",
+    "embedder": "sentence_transformers",
+    "embedder_options": {
+      "model": "Qwen/Qwen3-Embedding-0.6B",
+      "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+      "query_prompt": "Instruct: Given a student's question, retrieve the passages of the course notes that answer it\nQuery:",
+      "document_prompt": null,
+      "batch_size": 16,
+      "device": null
+    }
+  },
+  "index": {
+    "vector_store": "pgvector",
+    "vector_store_options": {
+      "host": "localhost",
+      "port": 5432
+    }
+  },
+  "query": {
+    "index": "structured",
+    "k": 5,
+    "system_prompt": "You answer questions using only the numbered context passages.\nCite the passages you use with their numbers, like [1] or [2][3].\nIf the context does not contain the answer, say so plainly instead of guessing.\nAnswer in the language of the question.",
+    "source_template": "{collection_name} › Tema {doc_number}: {doc_title} › {section}",
+    "llm": "ollama",
+    "llm_options": {
+      "base_url": "http://localhost:11434",
+      "model": "qwen3.5:4b",
+      "think": false,
+      "num_ctx": 8192,
+      "temperature": 0.3,
+      "timeout": 120
+    }
+  }
+}
